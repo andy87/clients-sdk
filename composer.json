@@ -1,5 +1,5 @@
 {
-  "name": "andy87/clients-base",
+  "name": "andy87/clients-sdk",
   "description": "Base abstractions for typed PHP API clients.",
   "type": "library",
   "license": "MIT",

@@ -34,17 +34,17 @@ class NativeHttpTransport implements HttpTransportInterface
         if ($request->rawBody !== null) {
             $body = $request->rawBody;
         } elseif ($request->body !== null) {
-            if ($request->contentType === 'application/x-www-form-urlencoded') {
+            if ($this->mediaType($request->contentType) === 'application/x-www-form-urlencoded') {
                 $body = http_build_query($request->body);
             } else {
                 $body = json_encode($request->body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
-                if (!$this->hasHeader($headers, 'Content-Type')) {
+                if (!HeaderUtils::has($headers, 'Content-Type')) {
                     $headers['Content-Type'] = $request->contentType ?? 'application/json';
                 }
             }
         }
 
-        if ($request->contentType !== null && !$this->hasHeader($headers, 'Content-Type')) {
+        if ($request->contentType !== null && !HeaderUtils::has($headers, 'Content-Type')) {
             $headers['Content-Type'] = $request->contentType;
         }
 
@@ -99,25 +99,6 @@ class NativeHttpTransport implements HttpTransportInterface
     }
 
     /**
-     * Проверяет наличие заголовка без учёта регистра.
-     *
-     * @param array<string, string> $headers Заголовки.
-     * @param string $name Имя заголовка.
-     *
-     * @return bool true, если заголовок найден.
-     */
-    private function hasHeader(array $headers, string $name): bool
-    {
-        foreach ($headers as $headerName => $_) {
-            if (strcasecmp($headerName, $name) === 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Форматирует заголовки для stream context.
      *
      * @param array<string, string> $headers Заголовки.
@@ -129,10 +110,26 @@ class NativeHttpTransport implements HttpTransportInterface
         $lines = [];
 
         foreach ($headers as $name => $value) {
-            $lines[] = $name . ': ' . $value;
+            $lines[] = HeaderUtils::normalizeName($name) . ': ' . HeaderUtils::normalizeValue($value);
         }
 
         return implode("\r\n", $lines);
+    }
+
+    /**
+     * Возвращает нормализованный media type без параметров Content-Type.
+     *
+     * @param string|null $contentType Content-Type.
+     *
+     * @return string|null Media type или null.
+     */
+    private function mediaType(?string $contentType): ?string
+    {
+        if ($contentType === null) {
+            return null;
+        }
+
+        return strtolower(trim(explode(';', $contentType, 2)[0]));
     }
 
     /**

@@ -14,8 +14,11 @@ use Andy87\ClientsBase\Exception\ResponseDecodeException;
 use Andy87\ClientsBase\Exception\ValidationException;
 use Andy87\ClientsBase\Encoder\DefaultBodyEncoder;
 use Andy87\ClientsBase\Encoder\MultipartBodyEncoder;
+use Andy87\ClientsBase\Event\ClientEvents;
+use Andy87\ClientsBase\Http\MultipartFile;
 use Andy87\ClientsBase\Http\HttpResponse;
 use Andy87\ClientsBase\Http\HttpRequest;
+use Andy87\ClientsBase\Http\NativeHttpTransport;
 use Andy87\ClientsBase\Retry\DefaultRetryPolicy;
 use Andy87\ClientsBase\Tests\Support\CreateUserPrompt;
 use Andy87\ClientsBase\Tests\Support\FakeTransport;
@@ -189,6 +192,31 @@ class ProviderPipelineTest extends TestCase
     }
 
     /**
+     * Проверяет, что изменения query в BEFORE_REQUEST попадают в финальную query-string metadata.
+     *
+     * @return void
+     */
+    public function testBeforeRequestQueryMutationIsFinalized(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(200, [], '{"id":1}')]);
+        $provider = new TestProvider(
+            'https://api.example.test',
+            new NullAuthorizationStrategy(),
+            $transport,
+            options: new ClientOptions(events: [
+                ClientEvents::BEFORE_REQUEST => static function (object $event): void {
+                    $event->request->query['debug'] = '1';
+                },
+            ]),
+        );
+
+        $provider->call(new GetUserPrompt(['id' => 1, 'includePosts' => true]), UserResponse::class);
+
+        self::assertSame(['include_posts' => true, 'debug' => '1'], $transport->requests[0]->query);
+        self::assertSame('include_posts=1&debug=1', $transport->requests[0]->metadata['queryString']);
+    }
+
+    /**
      * Проверяет, что OAuth token request содержит закодированное form-urlencoded тело.
      *
      * @return void
@@ -267,6 +295,40 @@ class ProviderPipelineTest extends TestCase
     }
 
     /**
+     * Проверяет, что multipart field name не может внедрить дополнительный header.
+     *
+     * @return void
+     */
+    public function testMultipartBodyRejectsHeaderInjectionInFieldName(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        (new MultipartBodyEncoder())->encode(["file\r\nX-Injected: 1" => 'abc'], 'multipart/form-data');
+    }
+
+    /**
+     * Проверяет, что multipart filename не может внедрить дополнительный header.
+     *
+     * @return void
+     */
+    public function testMultipartBodyRejectsHeaderInjectionInFilename(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'clients-sdk');
+        self::assertIsString($path);
+        file_put_contents($path, 'abc');
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+
+            (new MultipartBodyEncoder())->encode([
+                'file' => new MultipartFile($path, "evil\r\nX-Injected: 1.txt"),
+            ], 'multipart/form-data');
+        } finally {
+            unlink($path);
+        }
+    }
+
+    /**
      * Проверяет регистронезависимый выбор encoder-а по Content-Type.
      *
      * @return void
@@ -277,6 +339,23 @@ class ProviderPipelineTest extends TestCase
 
         self::assertSame('a=1', $body->content);
         self::assertSame('Application/X-WWW-FORM-URLENCODED', $body->contentType);
+    }
+
+    /**
+     * Проверяет, что Native transport fallback нормализует Content-Type без учёта регистра.
+     *
+     * @return void
+     */
+    public function testNativeTransportNormalizesFallbackContentType(): void
+    {
+        $transport = new NativeHttpTransport();
+        $mediaType = new \ReflectionMethod($transport, 'mediaType');
+        $mediaType->setAccessible(true);
+
+        self::assertSame(
+            'application/x-www-form-urlencoded',
+            $mediaType->invoke($transport, 'Application/X-WWW-FORM-URLENCODED; charset=utf-8'),
+        );
     }
 
     /**

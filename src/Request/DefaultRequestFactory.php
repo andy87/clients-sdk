@@ -11,6 +11,7 @@ use Andy87\ClientsBase\Contracts\RequestFactoryInterface;
 use Andy87\ClientsBase\Encoder\DefaultBodyEncoder;
 use Andy87\ClientsBase\Encoder\DefaultQueryEncoder;
 use Andy87\ClientsBase\Exception\ValidationException;
+use Andy87\ClientsBase\Http\HeaderUtils;
 use Andy87\ClientsBase\Http\HttpRequest;
 
 /**
@@ -59,9 +60,9 @@ class DefaultRequestFactory implements RequestFactoryInterface
         $url = rtrim($baseUrl, '/') . '/' . ltrim($endpoint, '/');
 
         $encodedBody = $this->bodyEncoder->encode($prompt->getBody(), $prompt->getContentType());
-        $headers = array_merge($headers, $encodedBody->headers);
+        $headers = HeaderUtils::merge($headers, $encodedBody->headers);
 
-        if ($encodedBody->contentType !== null && !$this->hasHeader($headers, 'Content-Type')) {
+        if ($encodedBody->contentType !== null && !HeaderUtils::has($headers, 'Content-Type')) {
             $headers['Content-Type'] = $encodedBody->contentType;
         }
 
@@ -104,22 +105,4 @@ class DefaultRequestFactory implements RequestFactoryInterface
         return $endpoint;
     }
 
-    /**
-     * Проверяет наличие заголовка без учёта регистра.
-     *
-     * @param array<string, string> $headers Заголовки.
-     * @param string $name Имя заголовка.
-     *
-     * @return bool true, если заголовок найден.
-     */
-    private function hasHeader(array $headers, string $name): bool
-    {
-        foreach ($headers as $headerName => $_) {
-            if (strcasecmp($headerName, $name) === 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

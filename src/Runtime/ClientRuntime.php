@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Andy87\ClientsBase\Runtime;
 
+use Andy87\ClientsBase\Http\HeaderUtils;
+
 /**
  * Хранит runtime-настройки API-клиента: обработчики событий и дефолтные заголовки.
  */
@@ -121,28 +123,7 @@ class ClientRuntime
      */
     public function mergeHeaders(array $base, array $headers): array
     {
-        $result = [];
-        $index = [];
-
-        foreach ($base as $name => $value) {
-            $normalizedName = $this->normalizeHeaderName($name);
-            $result[$normalizedName] = $this->normalizeHeaderValue($value);
-            $index[strtolower($normalizedName)] = $normalizedName;
-        }
-
-        foreach ($headers as $name => $value) {
-            $normalizedName = $this->normalizeHeaderName($name);
-            $lowerName = strtolower($normalizedName);
-
-            if (isset($index[$lowerName])) {
-                unset($result[$index[$lowerName]]);
-            }
-
-            $result[$normalizedName] = $this->normalizeHeaderValue($value);
-            $index[$lowerName] = $normalizedName;
-        }
-
-        return $result;
+        return HeaderUtils::merge($base, $headers);
     }
 
     /**
@@ -202,49 +183,4 @@ class ClientRuntime
         return $eventName;
     }
 
-    /**
-     * Нормализует имя заголовка.
-     *
-     * @param string|int $name Имя заголовка.
-     *
-     * @return string Нормализованное имя заголовка.
-     *
-     * @throws \InvalidArgumentException Если имя заголовка некорректно.
-     */
-    private function normalizeHeaderName(string|int $name): string
-    {
-        if (!is_string($name)) {
-            throw new \InvalidArgumentException('Header name must be a string.');
-        }
-
-        $name = trim($name);
-
-        if ($name === '') {
-            throw new \InvalidArgumentException('Header name must be a non-empty string.');
-        }
-
-        return $name;
-    }
-
-    /**
-     * Нормализует значение заголовка.
-     *
-     * @param mixed $value Значение заголовка.
-     *
-     * @return string Нормализованное значение заголовка.
-     *
-     * @throws \InvalidArgumentException Если значение заголовка некорректно.
-     */
-    private function normalizeHeaderValue(mixed $value): string
-    {
-        if (is_string($value)) {
-            return $value;
-        }
-
-        if (is_int($value) || is_float($value) || is_bool($value) || $value instanceof \Stringable) {
-            return (string) $value;
-        }
-
-        throw new \InvalidArgumentException('Header value must be scalar or Stringable.');
-    }
 }

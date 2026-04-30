@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Andy87\ClientsBase\Encoder;
 
 use Andy87\ClientsBase\Contracts\BodyEncoderInterface;
+use Andy87\ClientsBase\Http\HeaderUtils;
 use Andy87\ClientsBase\Http\HttpBody;
 use Andy87\ClientsBase\Http\MultipartFile;
 
@@ -94,8 +95,12 @@ class MultipartBodyEncoder implements BodyEncoderInterface
             $filename = $value->filename ?? basename($value->path);
 
             return '--' . $boundary . "\r\n"
-                . sprintf('Content-Disposition: form-data; name="%s"; filename="%s"', $this->escape($name), $this->escape($filename)) . "\r\n"
-                . 'Content-Type: ' . $value->contentType . "\r\n\r\n"
+                . sprintf(
+                    'Content-Disposition: form-data; name="%s"; filename="%s"',
+                    $this->escapeHeaderParameter($name, 'Multipart field name'),
+                    $this->escapeHeaderParameter($filename, 'Multipart filename'),
+                ) . "\r\n"
+                . 'Content-Type: ' . HeaderUtils::normalizeValue($value->contentType) . "\r\n\r\n"
                 . file_get_contents($value->path) . "\r\n";
         }
 
@@ -104,7 +109,7 @@ class MultipartBodyEncoder implements BodyEncoderInterface
         }
 
         return '--' . $boundary . "\r\n"
-            . sprintf('Content-Disposition: form-data; name="%s"', $this->escape($name)) . "\r\n\r\n"
+            . sprintf('Content-Disposition: form-data; name="%s"', $this->escapeHeaderParameter($name, 'Multipart field name')) . "\r\n\r\n"
             . (string) $value . "\r\n";
     }
 
@@ -114,9 +119,15 @@ class MultipartBodyEncoder implements BodyEncoderInterface
      * @param string $value Значение.
      *
      * @return string Экранированное значение.
+     *
+     * @throws \InvalidArgumentException Если значение содержит CR или LF.
      */
-    private function escape(string $value): string
+    private function escapeHeaderParameter(string $value, string $label): string
     {
+        if (str_contains($value, "\r") || str_contains($value, "\n")) {
+            throw new \InvalidArgumentException($label . ' must not contain CR or LF.');
+        }
+
         return str_replace(['\\', '"'], ['\\\\', '\\"'], $value);
     }
 }

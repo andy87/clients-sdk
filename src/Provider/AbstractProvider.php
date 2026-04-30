@@ -93,6 +93,7 @@ abstract class AbstractProvider
         );
 
         $this->runtime->dispatch(ClientEvents::BEFORE_REQUEST, new BeforeRequestEvent($this, $prompt, $httpRequest));
+        $httpRequest = $this->options->requestFinalizer->finalize($httpRequest);
 
         try {
             $httpResponse = $this->sendWithRetry($httpRequest);

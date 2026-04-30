@@ -9,6 +9,7 @@ use Andy87\ClientsBase\Decoder\JsonResponseDecoder;
 use Andy87\ClientsBase\Encoder\DefaultBodyEncoder;
 use Andy87\ClientsBase\Encoder\DefaultQueryEncoder;
 use Andy87\ClientsBase\Error\DefaultApiErrorFactory;
+use Andy87\ClientsBase\Request\DefaultRequestFinalizer;
 use Andy87\ClientsBase\Request\DefaultRequestFactory;
 use Andy87\ClientsBase\Retry\NoRetryPolicy;
 use PHPUnit\Framework\TestCase;
@@ -35,5 +36,18 @@ class ClientOptionsTest extends TestCase
         self::assertInstanceOf(JsonResponseDecoder::class, $options->responseDecoder);
         self::assertInstanceOf(DefaultApiErrorFactory::class, $options->errorFactory);
         self::assertInstanceOf(DefaultRequestFactory::class, $options->requestFactory);
+        self::assertInstanceOf(DefaultRequestFinalizer::class, $options->requestFinalizer);
+    }
+
+    /**
+     * Проверяет, что ClientOptions сразу отклоняет небезопасные заголовки.
+     *
+     * @return void
+     */
+    public function testOptionsRejectHeaderInjection(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new ClientOptions(headers: ['X-Test' => "ok\r\nX-Injected: 1"]);
     }
 }

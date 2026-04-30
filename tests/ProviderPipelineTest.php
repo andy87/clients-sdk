@@ -5,11 +5,17 @@ declare(strict_types=1);
 namespace Andy87\ClientsBase\Tests;
 
 use Andy87\ClientsBase\Auth\ApiKeyAuthorizationStrategy;
+use Andy87\ClientsBase\Auth\ClientCredentialsAuthorizationStrategy;
 use Andy87\ClientsBase\Auth\NullAuthorizationStrategy;
 use Andy87\ClientsBase\Config\ClientOptions;
+use Andy87\ClientsBase\Dto\ApiError;
+use Andy87\ClientsBase\Exception\AuthorizationException;
 use Andy87\ClientsBase\Exception\ResponseDecodeException;
 use Andy87\ClientsBase\Exception\ValidationException;
+use Andy87\ClientsBase\Encoder\DefaultBodyEncoder;
+use Andy87\ClientsBase\Encoder\MultipartBodyEncoder;
 use Andy87\ClientsBase\Http\HttpResponse;
+use Andy87\ClientsBase\Http\HttpRequest;
 use Andy87\ClientsBase\Retry\DefaultRetryPolicy;
 use Andy87\ClientsBase\Tests\Support\CreateUserPrompt;
 use Andy87\ClientsBase\Tests\Support\FakeTransport;
@@ -45,7 +51,9 @@ class ProviderPipelineTest extends TestCase
         self::assertSame('{"id":10,"name":"Ivan"}', $response->getRawBody());
         self::assertSame(['id' => 10, 'name' => 'Ivan'], $response->getDecodedBody());
         self::assertNotNull($response->getRequest());
-        self::assertSame('https://api.example.test/users/10?include_posts=1', $transport->requests[0]->url);
+        self::assertSame('https://api.example.test/users/10', $transport->requests[0]->url);
+        self::assertSame(['include_posts' => true], $transport->requests[0]->query);
+        self::assertSame('include_posts=1', $transport->requests[0]->metadata['queryString']);
     }
 
     /**
@@ -144,6 +152,22 @@ class ProviderPipelineTest extends TestCase
     }
 
     /**
+     * Проверяет, что retry methods нормализуются независимо от регистра.
+     *
+     * @return void
+     */
+    public function testRetryPolicyNormalizesConfiguredMethods(): void
+    {
+        $policy = new DefaultRetryPolicy(maxAttempts: 2, methods: ['get']);
+
+        self::assertTrue($policy->shouldRetry(
+            1,
+            new HttpRequest('GET', 'https://api.example.test'),
+            new HttpResponse(503, [], '{}'),
+        ));
+    }
+
+    /**
      * Проверяет query API key авторизацию.
      *
      * @return void
@@ -159,7 +183,44 @@ class ProviderPipelineTest extends TestCase
 
         $provider->call(new GetUserPrompt(['id' => 1]), UserResponse::class);
 
-        self::assertSame('https://api.example.test/users/1?api_key=secret', $transport->requests[0]->url);
+        self::assertSame('https://api.example.test/users/1', $transport->requests[0]->url);
+        self::assertSame(['api_key' => 'secret'], $transport->requests[0]->query);
+        self::assertSame('api_key=secret', $transport->requests[0]->metadata['queryString']);
+    }
+
+    /**
+     * Проверяет, что OAuth token request содержит закодированное form-urlencoded тело.
+     *
+     * @return void
+     */
+    public function testClientCredentialsAuthorizationUsesRawFormBody(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(200, [], '{"access_token":"token","expires_in":3600}')]);
+        $authorization = new ClientCredentialsAuthorizationStrategy('https://auth.example.test/token', 'client', 'secret');
+
+        $headers = $authorization->getAuthorizationHeaders($transport);
+
+        self::assertSame(['Authorization' => 'Bearer token'], $headers);
+        self::assertSame('grant_type=client_credentials&client_id=client&client_secret=secret', $transport->requests[0]->rawBody);
+        self::assertSame('application/x-www-form-urlencoded', $transport->requests[0]->headers['Content-Type']);
+    }
+
+    /**
+     * Проверяет, что ошибка декодирования OAuth-ответа оборачивается в AuthorizationException.
+     *
+     * @return void
+     */
+    public function testClientCredentialsAuthorizationWrapsDecodeFailure(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(200, [], 'not-json')]);
+        $authorization = new ClientCredentialsAuthorizationStrategy('https://auth.example.test/token', 'client', 'secret');
+
+        try {
+            $authorization->getAuthorizationHeaders($transport);
+            self::fail('AuthorizationException was not thrown.');
+        } catch (AuthorizationException $exception) {
+            self::assertInstanceOf(ResponseDecodeException::class, $exception->getPrevious());
+        }
     }
 
     /**
@@ -177,5 +238,57 @@ class ProviderPipelineTest extends TestCase
         $provider->call(new class(['id' => 1]) extends GetUserPrompt {
             protected const PATH_FIELDS = [];
         }, UserResponse::class);
+    }
+
+    /**
+     * Проверяет, что multipart Content-Type содержит фактический boundary.
+     *
+     * @return void
+     */
+    public function testMultipartBodyAddsBoundaryToContentType(): void
+    {
+        $body = (new MultipartBodyEncoder())->encode(['file' => 'abc'], 'multipart/form-data');
+
+        self::assertStringContainsString('boundary=', $body->contentType ?? '');
+        self::assertStringContainsString('--' . substr((string) $body->contentType, strpos((string) $body->contentType, 'boundary=') + 9), $body->content ?? '');
+    }
+
+    /**
+     * Проверяет, что multipart encoder использует переданный boundary.
+     *
+     * @return void
+     */
+    public function testMultipartBodyUsesProvidedBoundary(): void
+    {
+        $body = (new MultipartBodyEncoder())->encode(['file' => 'abc'], 'multipart/form-data; boundary=test-boundary');
+
+        self::assertSame('multipart/form-data; boundary=test-boundary', $body->contentType);
+        self::assertStringContainsString('--test-boundary', $body->content ?? '');
+    }
+
+    /**
+     * Проверяет регистронезависимый выбор encoder-а по Content-Type.
+     *
+     * @return void
+     */
+    public function testBodyEncoderMatchesContentTypeCaseInsensitively(): void
+    {
+        $body = (new DefaultBodyEncoder())->encode(['a' => 1], 'Application/X-WWW-FORM-URLENCODED');
+
+        self::assertSame('a=1', $body->content);
+        self::assertSame('Application/X-WWW-FORM-URLENCODED', $body->contentType);
+    }
+
+    /**
+     * Проверяет, что строковый machine-readable code ошибки API сохраняется без приведения к int.
+     *
+     * @return void
+     */
+    public function testApiErrorPreservesStringCode(): void
+    {
+        $error = new ApiError(['error' => ['code' => 'invalid_request', 'message' => 'Bad request']], 400);
+
+        self::assertSame('invalid_request', $error->code);
+        self::assertSame(400, $error->statusCode);
     }
 }

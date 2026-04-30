@@ -23,7 +23,11 @@ class NativeHttpTransport implements HttpTransportInterface
      */
     public function send(HttpRequest $request): HttpResponse
     {
-        $url = $this->buildUrl($request->url, $request->query);
+        $url = $this->buildUrl(
+            $request->url,
+            $request->query,
+            is_string($request->metadata['queryString'] ?? null) ? $request->metadata['queryString'] : null,
+        );
         $headers = $request->headers;
         $body = null;
 
@@ -34,11 +38,13 @@ class NativeHttpTransport implements HttpTransportInterface
                 $body = http_build_query($request->body);
             } else {
                 $body = json_encode($request->body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
-                $headers['Content-Type'] = $request->contentType ?? 'application/json';
+                if (!$this->hasHeader($headers, 'Content-Type')) {
+                    $headers['Content-Type'] = $request->contentType ?? 'application/json';
+                }
             }
         }
 
-        if ($request->contentType !== null && !isset($headers['Content-Type'])) {
+        if ($request->contentType !== null && !$this->hasHeader($headers, 'Content-Type')) {
             $headers['Content-Type'] = $request->contentType;
         }
 
@@ -69,10 +75,11 @@ class NativeHttpTransport implements HttpTransportInterface
      *
      * @param string $url Базовый URL.
      * @param array<string, mixed> $query Query-параметры.
+     * @param string|null $queryString Уже закодированная query-строка.
      *
      * @return string URL.
      */
-    private function buildUrl(string $url, array $query): string
+    private function buildUrl(string $url, array $query, ?string $queryString = null): string
     {
         $query = array_filter($query, static fn (mixed $value): bool => $value !== null && $value !== []);
 
@@ -80,9 +87,34 @@ class NativeHttpTransport implements HttpTransportInterface
             return $url;
         }
 
+        $queryString ??= http_build_query($query);
+
+        if ($queryString === '') {
+            return $url;
+        }
+
         $separator = str_contains($url, '?') ? '&' : '?';
 
-        return $url . $separator . http_build_query($query);
+        return $url . $separator . $queryString;
+    }
+
+    /**
+     * Проверяет наличие заголовка без учёта регистра.
+     *
+     * @param array<string, string> $headers Заголовки.
+     * @param string $name Имя заголовка.
+     *
+     * @return bool true, если заголовок найден.
+     */
+    private function hasHeader(array $headers, string $name): bool
+    {
+        foreach ($headers as $headerName => $_) {
+            if (strcasecmp($headerName, $name) === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

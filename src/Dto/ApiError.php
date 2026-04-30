@@ -9,8 +9,8 @@ namespace Andy87\ClientsBase\Dto;
  */
 class ApiError
 {
-    /** @var int|null HTTP-статус или код ошибки API. */
-    public ?int $code;
+    /** @var int|string|null Машинный код ошибки API или HTTP-статус при отсутствии кода API. */
+    public int|string|null $code;
 
     /** @var int|null HTTP-статус ответа. */
     public ?int $statusCode;
@@ -53,9 +53,10 @@ class ApiError
         string $rawBody = '',
     ) {
         $error = is_array($raw['error'] ?? null) ? $raw['error'] : $raw;
+        $code = $error['code'] ?? null;
 
         $this->statusCode = $statusCode;
-        $this->code = isset($error['code']) ? (int) $error['code'] : $statusCode;
+        $this->code = is_int($code) || is_string($code) ? $code : $statusCode;
         $this->message = isset($error['message']) ? (string) $error['message'] : null;
         $this->type = isset($error['type']) ? (string) $error['type'] : null;
         $this->value = $error['value'] ?? null;

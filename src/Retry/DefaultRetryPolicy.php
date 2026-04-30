@@ -33,6 +33,7 @@ class DefaultRetryPolicy implements RetryPolicyInterface
         private int $maxDelayMs = 5000,
         private bool $respectRetryAfter = true,
     ) {
+        $this->methods = array_map(static fn (string $method): string => strtoupper($method), $this->methods);
     }
 
     /**

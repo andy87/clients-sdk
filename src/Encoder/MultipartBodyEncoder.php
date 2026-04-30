@@ -33,7 +33,7 @@ class MultipartBodyEncoder implements BodyEncoderInterface
             throw new \InvalidArgumentException('Multipart body must be an array.');
         }
 
-        $boundary = '----clients-sdk-' . bin2hex(random_bytes(12));
+        $boundary = $this->extractBoundary($contentType) ?? '----clients-sdk-' . bin2hex(random_bytes(12));
         $content = '';
 
         foreach ($body as $name => $value) {
@@ -42,7 +42,35 @@ class MultipartBodyEncoder implements BodyEncoderInterface
 
         $content .= '--' . $boundary . "--\r\n";
 
-        return new HttpBody($content, $contentType ?? 'multipart/form-data; boundary=' . $boundary);
+        return new HttpBody($content, 'multipart/form-data; boundary=' . $boundary);
+    }
+
+    /**
+     * Возвращает boundary из Content-Type, если он передан.
+     *
+     * @param string|null $contentType Content-Type запроса.
+     *
+     * @return string|null Boundary или null.
+     */
+    private function extractBoundary(?string $contentType): ?string
+    {
+        if ($contentType === null) {
+            return null;
+        }
+
+        foreach (explode(';', $contentType) as $part) {
+            $part = trim($part);
+
+            if (!str_starts_with(strtolower($part), 'boundary=')) {
+                continue;
+            }
+
+            $boundary = trim(substr($part, 9), " \t\n\r\0\x0B\"");
+
+            return $boundary !== '' ? $boundary : null;
+        }
+
+        return null;
     }
 
     /**

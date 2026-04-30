@@ -76,16 +76,26 @@ class ClientCredentialsAuthorizationStrategy implements AuthorizationStrategyInt
             $body['scope'] = $this->scope;
         }
 
-        $response = $transport->send(new HttpRequest(
-            method: 'POST',
-            url: $this->tokenUrl,
-            headers: ['Accept' => 'application/json'],
-            body: $body,
-            contentType: 'application/x-www-form-urlencoded',
-            timeout: $this->timeout,
-        ));
+        $rawBody = http_build_query($body);
 
-        $data = $response->json();
+        try {
+            $response = $transport->send(new HttpRequest(
+                method: 'POST',
+                url: $this->tokenUrl,
+                headers: [
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/x-www-form-urlencoded',
+                ],
+                body: $body,
+                contentType: 'application/x-www-form-urlencoded',
+                timeout: $this->timeout,
+                rawBody: $rawBody,
+            ));
+
+            $data = $response->json();
+        } catch (\Throwable $exception) {
+            throw new AuthorizationException('OAuth client_credentials authorization failed.', 0, $exception);
+        }
 
         if ($response->statusCode >= 400 || !isset($data['access_token'])) {
             throw new AuthorizationException('OAuth client_credentials authorization failed.');

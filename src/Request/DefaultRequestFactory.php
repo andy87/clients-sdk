@@ -58,10 +58,6 @@ class DefaultRequestFactory implements RequestFactoryInterface
         $queryString = $this->queryEncoder->encode($query);
         $url = rtrim($baseUrl, '/') . '/' . ltrim($endpoint, '/');
 
-        if ($queryString !== '') {
-            $url .= (str_contains($url, '?') ? '&' : '?') . $queryString;
-        }
-
         $encodedBody = $this->bodyEncoder->encode($prompt->getBody(), $prompt->getContentType());
         $headers = array_merge($headers, $encodedBody->headers);
 
@@ -73,11 +69,14 @@ class DefaultRequestFactory implements RequestFactoryInterface
             method: $prompt->getMethod(),
             url: $url,
             headers: $headers,
-            query: [],
+            query: $query,
             body: $prompt->getBody(),
             contentType: $encodedBody->contentType ?? $prompt->getContentType(),
             timeout: $timeout,
             rawBody: $encodedBody->content,
+            metadata: [
+                'queryString' => $queryString,
+            ],
         );
     }
 

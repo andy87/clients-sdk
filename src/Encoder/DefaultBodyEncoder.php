@@ -41,14 +41,32 @@ class DefaultBodyEncoder implements BodyEncoderInterface
      */
     public function encode(array|string|null $body, ?string $contentType): HttpBody
     {
-        if ($contentType !== null && str_starts_with($contentType, 'application/x-www-form-urlencoded')) {
+        $mediaType = $this->mediaType($contentType);
+
+        if ($mediaType === 'application/x-www-form-urlencoded') {
             return $this->formEncoder->encode($body, $contentType);
         }
 
-        if ($contentType !== null && str_starts_with($contentType, 'multipart/form-data')) {
+        if ($mediaType === 'multipart/form-data') {
             return $this->multipartEncoder->encode($body, $contentType);
         }
 
         return $this->jsonEncoder->encode($body, $contentType);
+    }
+
+    /**
+     * Возвращает нормализованный media type без параметров Content-Type.
+     *
+     * @param string|null $contentType Content-Type.
+     *
+     * @return string|null Media type или null.
+     */
+    private function mediaType(?string $contentType): ?string
+    {
+        if ($contentType === null) {
+            return null;
+        }
+
+        return strtolower(trim(explode(';', $contentType, 2)[0]));
     }
 }

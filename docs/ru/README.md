@@ -6,7 +6,7 @@
 
 ## Обзор
 
-`andy87/clients-base` предоставляет небольшой набор переиспользуемых компонентов для SDK API-клиентов:
+`andy87/clients-sdk` предоставляет небольшой набор переиспользуемых компонентов для SDK API-клиентов:
 
 - prompt DTO для HTTP-метода, endpoint, path-параметров, query-параметров, тела запроса и валидации;
 - response DTO для нормализованных данных ответа, HTTP-статуса, заголовков и ошибок API;
@@ -24,7 +24,7 @@
 ## Установка
 
 ```bash
-composer require andy87/clients-base
+composer require andy87/clients-sdk
 ```
 
 ## Основные понятия
@@ -142,13 +142,18 @@ final class UsersProvider extends AbstractProvider
 declare(strict_types=1);
 
 use Andy87\ClientsBase\Auth\NullAuthorizationStrategy;
+use Andy87\ClientsBase\Config\ClientOptions;
 use Andy87\ClientsBase\Http\NativeHttpTransport;
+use Andy87\ClientsBase\Retry\DefaultRetryPolicy;
 
 $provider = new UsersProvider(
     baseUrl: 'https://api.example.com',
     authorizationStrategy: new NullAuthorizationStrategy(),
     transport: new NativeHttpTransport(),
-    timeout: 30,
+    options: new ClientOptions(
+        timeout: 30,
+        retryPolicy: new DefaultRetryPolicy(maxAttempts: 2),
+    ),
 );
 
 $response = $provider->getUser(123);
@@ -157,7 +162,64 @@ if ($response->hasError()) {
     $error = $response->getError();
     echo $error?->message ?? 'API request failed.';
 }
+
+echo $response->getStatusCode();
 ```
+
+## Настройки клиента
+
+`ClientOptions` — основная точка расширения SDK. Если объект не передан, SDK использует безопасные настройки по умолчанию: JSON-запросы и ответы, строгую проверку успешных ответов, отключённые повторы и стандартную фабрику запросов.
+
+Настраиваемые части:
+
+- `timeout`, `headers`, `events`;
+- `strictValidation`;
+- `retryPolicy`;
+- `queryEncoder`;
+- `bodyEncoder`;
+- `responseDecoder`;
+- `errorFactory`;
+- `requestFactory`.
+
+Повторы запросов выключены по умолчанию. Используйте `DefaultRetryPolicy` только для API-операций, где повтор безопасен.
+
+## Runtime-события и заголовки
+
+`ClientRuntime` хранит дефолтные заголовки запросов и обработчики событий, общие для клиента и его provider-ов. Передавайте один runtime-объект во все provider-ы, которым нужны общие заголовки и listeners.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+use Andy87\ClientsBase\Event\BeforeRequestEvent;
+use Andy87\ClientsBase\Event\ClientEvents;
+use Andy87\ClientsBase\Runtime\ClientRuntime;
+
+$runtime = new ClientRuntime(
+    headers: [
+        'X-Client' => 'crm',
+    ],
+    events: [
+        ClientEvents::BEFORE_REQUEST => static function (BeforeRequestEvent $event): void {
+            $event->request->headers['X-Trace-Id'] = bin2hex(random_bytes(8));
+        },
+    ],
+);
+
+$runtime->addHeaders([
+    'X-Account' => 'main',
+]);
+```
+
+Поддерживаемые события:
+
+- `ClientEvents::AFTER_INIT` после завершения инициализации конкретного клиента.
+- `ClientEvents::BEFORE_REQUEST` перед отправкой mutable `HttpRequest` транспортом.
+- `ClientEvents::AFTER_REQUEST` после преобразования raw HTTP-ответа в типизированный response DTO.
+- `ClientEvents::REQUEST_EXCEPTION` после ошибки транспорта, JSON-декодирования или создания response DTO.
+
+Имена заголовков объединяются без учёта регистра. Заголовки авторизации перекрывают дефолтные runtime-заголовки, а listeners `BEFORE_REQUEST` могут изменить уже финальный запрос.
 
 ## Авторизация
 
@@ -191,6 +253,13 @@ $authorization = new ClientCredentialsAuthorizationStrategy(
 );
 ```
 
+Другие встроенные стратегии:
+
+- `BearerTokenAuthorizationStrategy` для статического Bearer token;
+- `BasicAuthorizationStrategy` для HTTP Basic auth;
+- `ApiKeyAuthorizationStrategy` для API key в header или query;
+- `CallbackAuthorizationStrategy` для проектной логики авторизационных заголовков.
+
 По умолчанию prompt требует авторизацию. Переопределите константу prompt, если запрос публичный:
 
 ```php
@@ -204,6 +273,8 @@ protected const AUTHORIZATION_REQUIRED = false;
 - query-параметры;
 - JSON-тела запросов;
 - тела запросов `application/x-www-form-urlencoded`;
+- тела запросов `multipart/form-data` через `MultipartFile`;
+- заранее закодированные raw-тела запросов;
 - HTTP-статус и заголовки ответа;
 - декодирование JSON-ответа через `HttpResponse::json()`.
 
@@ -242,11 +313,13 @@ final class CustomTransport implements HttpTransportInterface
 ## Обработка ошибок
 
 - Валидация prompt выбрасывает `InvalidArgumentException`, если обязательное поле отсутствует или пустое.
-- Авторизация может выбросить `RuntimeException`, если OAuth-токен не получен.
-- Ошибки транспорта выбрасывают `RuntimeException`.
-- Не-JSON ответы выбрасывают `RuntimeException` при вызове `HttpResponse::json()`.
-- HTTP-ответы со статусом `400` и выше преобразуются в `ApiError` и доступны через `ResponseInterface::getError()`.
-- Успешные ответы без обязательных полей выбрасывают `UnexpectedValueException`.
+- Валидация фабрики запроса выбрасывает `ValidationException`, если endpoint содержит незаполненный path-плейсхолдер.
+- Ошибки авторизации выбрасывают `AuthorizationException`.
+- Ошибки транспорта выбрасывают `TransportException`.
+- Успешные не-JSON ответы выбрасывают `ResponseDecodeException`.
+- Ошибки создания Response DTO выбрасывают `ResponseHydrationException`.
+- HTTP-ответы со статусом `400` и выше преобразуются в `ApiError` и доступны через `ResponseInterface::getError()`, включая не-JSON тела ошибок.
+- Успешные ответы без обязательных полей выбрасывают `UnexpectedValueException`, если включён `strictValidation`.
 
 ## Лицензия
 

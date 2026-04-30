@@ -6,6 +6,7 @@ namespace Andy87\ClientsBase\Auth;
 
 use Andy87\ClientsBase\Contracts\AuthorizationStrategyInterface;
 use Andy87\ClientsBase\Contracts\HttpTransportInterface;
+use Andy87\ClientsBase\Exception\AuthorizationException;
 use Andy87\ClientsBase\Http\HttpRequest;
 
 /**
@@ -43,7 +44,7 @@ class ClientCredentialsAuthorizationStrategy implements AuthorizationStrategyInt
      *
      * @return array<string, string>
      *
-     * @throws \RuntimeException Если токен не получен.
+     * @throws AuthorizationException Если токен не получен.
      */
     public function getAuthorizationHeaders(HttpTransportInterface $transport): array
     {
@@ -61,7 +62,7 @@ class ClientCredentialsAuthorizationStrategy implements AuthorizationStrategyInt
      *
      * @return void
      *
-     * @throws \RuntimeException Если API авторизации вернул ошибку.
+     * @throws AuthorizationException Если API авторизации вернул ошибку.
      */
     private function requestToken(HttpTransportInterface $transport): void
     {
@@ -87,7 +88,7 @@ class ClientCredentialsAuthorizationStrategy implements AuthorizationStrategyInt
         $data = $response->json();
 
         if ($response->statusCode >= 400 || !isset($data['access_token'])) {
-            throw new \RuntimeException('OAuth client_credentials authorization failed.');
+            throw new AuthorizationException('OAuth client_credentials authorization failed.');
         }
 
         $this->accessToken = (string) $data['access_token'];

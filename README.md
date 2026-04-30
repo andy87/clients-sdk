@@ -6,7 +6,7 @@ Base abstractions for building typed PHP API clients.
 
 ## Overview
 
-`andy87/clients-base` provides a small set of reusable building blocks for API client SDKs:
+`andy87/clients-sdk` provides a small set of reusable building blocks for API client SDKs:
 
 - prompt DTOs for request method, endpoint, path parameters, query parameters, body and validation;
 - response DTOs for normalized response data, status code, headers and API errors;
@@ -24,7 +24,7 @@ The package does not generate API clients and does not depend on a specific HTTP
 ## Installation
 
 ```bash
-composer require andy87/clients-base
+composer require andy87/clients-sdk
 ```
 
 ## Core Concepts
@@ -142,13 +142,18 @@ Create the provider with a base URL, authorization strategy and transport:
 declare(strict_types=1);
 
 use Andy87\ClientsBase\Auth\NullAuthorizationStrategy;
+use Andy87\ClientsBase\Config\ClientOptions;
 use Andy87\ClientsBase\Http\NativeHttpTransport;
+use Andy87\ClientsBase\Retry\DefaultRetryPolicy;
 
 $provider = new UsersProvider(
     baseUrl: 'https://api.example.com',
     authorizationStrategy: new NullAuthorizationStrategy(),
     transport: new NativeHttpTransport(),
-    timeout: 30,
+    options: new ClientOptions(
+        timeout: 30,
+        retryPolicy: new DefaultRetryPolicy(maxAttempts: 2),
+    ),
 );
 
 $response = $provider->getUser(123);
@@ -157,7 +162,64 @@ if ($response->hasError()) {
     $error = $response->getError();
     echo $error?->message ?? 'API request failed.';
 }
+
+echo $response->getStatusCode();
 ```
+
+## Client Options
+
+`ClientOptions` is the main extension point. If it is not passed, the SDK uses safe defaults: JSON requests and responses, strict successful response validation, native no-retry policy and default request factory.
+
+Configurable parts:
+
+- `timeout`, `headers`, `events`;
+- `strictValidation`;
+- `retryPolicy`;
+- `queryEncoder`;
+- `bodyEncoder`;
+- `responseDecoder`;
+- `errorFactory`;
+- `requestFactory`.
+
+Retry is disabled by default. Use `DefaultRetryPolicy` only when repeated requests are safe for the target API operation.
+
+## Runtime Events and Headers
+
+`ClientRuntime` stores default request headers and event listeners shared by a client and its providers. Pass the same runtime object to providers that must share headers and listeners.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+use Andy87\ClientsBase\Event\BeforeRequestEvent;
+use Andy87\ClientsBase\Event\ClientEvents;
+use Andy87\ClientsBase\Runtime\ClientRuntime;
+
+$runtime = new ClientRuntime(
+    headers: [
+        'X-Client' => 'crm',
+    ],
+    events: [
+        ClientEvents::BEFORE_REQUEST => static function (BeforeRequestEvent $event): void {
+            $event->request->headers['X-Trace-Id'] = bin2hex(random_bytes(8));
+        },
+    ],
+);
+
+$runtime->addHeaders([
+    'X-Account' => 'main',
+]);
+```
+
+Supported events:
+
+- `ClientEvents::AFTER_INIT` after a concrete client finishes initialization.
+- `ClientEvents::BEFORE_REQUEST` before transport sends a mutable `HttpRequest`.
+- `ClientEvents::AFTER_REQUEST` after raw HTTP response is converted to a typed response DTO.
+- `ClientEvents::REQUEST_EXCEPTION` after transport, JSON decoding or response DTO construction fails.
+
+Header names are merged case-insensitively. Authorization headers override default runtime headers, and `BEFORE_REQUEST` listeners can still mutate the final request.
 
 ## Authorization
 
@@ -191,6 +253,13 @@ $authorization = new ClientCredentialsAuthorizationStrategy(
 );
 ```
 
+Other built-in strategies:
+
+- `BearerTokenAuthorizationStrategy` for a static Bearer token;
+- `BasicAuthorizationStrategy` for HTTP Basic auth;
+- `ApiKeyAuthorizationStrategy` for header or query API keys;
+- `CallbackAuthorizationStrategy` for project-specific authorization headers.
+
 Prompts require authorization by default. Override the prompt constant when a request is public:
 
 ```php
@@ -204,6 +273,8 @@ protected const AUTHORIZATION_REQUIRED = false;
 - query parameters;
 - JSON request bodies;
 - `application/x-www-form-urlencoded` request bodies;
+- `multipart/form-data` request bodies through `MultipartFile`;
+- already encoded raw request bodies;
 - response status code and headers;
 - JSON response decoding through `HttpResponse::json()`.
 
@@ -242,11 +313,13 @@ final class CustomTransport implements HttpTransportInterface
 ## Error Handling
 
 - Prompt validation throws `InvalidArgumentException` when a required field is missing or empty.
-- Authorization can throw `RuntimeException` when the OAuth token cannot be received.
-- Transport failures throw `RuntimeException`.
-- Non-JSON responses throw `RuntimeException` during `HttpResponse::json()`.
-- HTTP responses with status code `400` or higher are converted to `ApiError` and available through `ResponseInterface::getError()`.
-- Successful responses with missing required fields throw `UnexpectedValueException`.
+- Request factory validation can throw `ValidationException` when an endpoint contains an unfilled path placeholder.
+- Authorization failures throw `AuthorizationException`.
+- Transport failures throw `TransportException`.
+- Successful non-JSON responses throw `ResponseDecodeException`.
+- Response DTO construction failures throw `ResponseHydrationException`.
+- HTTP responses with status code `400` or higher are converted to `ApiError` and available through `ResponseInterface::getError()`, including non-JSON error bodies.
+- Successful responses with missing required fields throw `UnexpectedValueException` when `strictValidation` is enabled.
 
 ## License
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Andy87\ClientsBase\Http;
 
+use Andy87\ClientsBase\Decoder\JsonResponseDecoder;
+
 /**
  * Хранит данные HTTP-ответа.
  */
@@ -34,16 +36,6 @@ class HttpResponse
      */
     public function json(): array
     {
-        if ($this->body === '') {
-            return [];
-        }
-
-        $data = json_decode($this->body, true);
-
-        if (!is_array($data)) {
-            throw new \RuntimeException('API returned non-JSON response.');
-        }
-
-        return $data;
+        return (new JsonResponseDecoder())->decode($this);
     }
 }

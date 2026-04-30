@@ -19,6 +19,8 @@ class HttpRequest
      * @param array<string, mixed>|list<mixed>|null $body Тело запроса.
      * @param string|null $contentType Content-Type тела.
      * @param int $timeout Таймаут в секундах.
+     * @param string|null $rawBody Уже закодированное тело запроса.
+     * @param array<string, mixed> $metadata Дополнительные данные запроса.
      *
      * @return void
      */
@@ -30,6 +32,8 @@ class HttpRequest
         public array|null $body = null,
         public ?string $contentType = null,
         public int $timeout = 30,
+        public ?string $rawBody = null,
+        public array $metadata = [],
     ) {
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Andy87\ClientsBase\Http;
 
 use Andy87\ClientsBase\Contracts\HttpTransportInterface;
+use Andy87\ClientsBase\Exception\TransportException;
 
 /**
  * Выполняет HTTP-запросы средствами PHP stream wrapper.
@@ -26,7 +27,9 @@ class NativeHttpTransport implements HttpTransportInterface
         $headers = $request->headers;
         $body = null;
 
-        if ($request->body !== null) {
+        if ($request->rawBody !== null) {
+            $body = $request->rawBody;
+        } elseif ($request->body !== null) {
             if ($request->contentType === 'application/x-www-form-urlencoded') {
                 $body = http_build_query($request->body);
             } else {
@@ -53,7 +56,7 @@ class NativeHttpTransport implements HttpTransportInterface
 
         if ($responseBody === false) {
             $error = error_get_last();
-            throw new \RuntimeException($error['message'] ?? 'HTTP request failed.');
+            throw new TransportException($error['message'] ?? 'HTTP request failed.');
         }
 
         [$statusCode, $responseHeaders] = $this->parseResponseHeaders($http_response_header ?? []);

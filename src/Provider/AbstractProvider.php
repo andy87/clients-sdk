@@ -65,11 +65,15 @@ abstract class AbstractProvider
      *
      * @return T DTO ответа.
      *
-     * @throws \InvalidArgumentException Если Prompt невалиден.
+     * @throws \InvalidArgumentException Если Prompt или класс ответа невалиден.
      * @throws \RuntimeException Если HTTP-транспорт, декодирование или гидрация завершились ошибкой.
      */
     protected function request(PromptInterface $prompt, string $responseClass): ResponseInterface
     {
+        if (!is_a($responseClass, ResponseInterface::class, true)) {
+            throw new \InvalidArgumentException(sprintf('Response class "%s" must implement %s.', $responseClass, ResponseInterface::class));
+        }
+
         $prompt->validate();
 
         $headers = $this->runtime->mergeHeaders(['Accept' => 'application/json'], $this->runtime->getHeaders());

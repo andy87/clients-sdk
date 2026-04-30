@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Andy87\ClientsBase\Http;
 
 use Andy87\ClientsBase\Contracts\HttpTransportInterface;
+use Andy87\ClientsBase\Contracts\QueryEncoderInterface;
+use Andy87\ClientsBase\Encoder\DefaultQueryEncoder;
 use Andy87\ClientsBase\Exception\TransportException;
 
 /**
@@ -12,6 +14,18 @@ use Andy87\ClientsBase\Exception\TransportException;
  */
 class NativeHttpTransport implements HttpTransportInterface
 {
+    /**
+     * Создаёт native HTTP-транспорт.
+     *
+     * @param QueryEncoderInterface $queryEncoder Кодировщик query-параметров.
+     *
+     * @return void
+     */
+    public function __construct(
+        private QueryEncoderInterface $queryEncoder = new DefaultQueryEncoder(),
+    ) {
+    }
+
     /**
      * Отправляет HTTP-запрос.
      *
@@ -87,7 +101,7 @@ class NativeHttpTransport implements HttpTransportInterface
             return $url;
         }
 
-        $queryString ??= http_build_query($query);
+        $queryString ??= $this->queryEncoder->encode($query);
 
         if ($queryString === '') {
             return $url;

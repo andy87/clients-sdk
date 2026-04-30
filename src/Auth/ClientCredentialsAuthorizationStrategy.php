@@ -97,11 +97,13 @@ class ClientCredentialsAuthorizationStrategy implements AuthorizationStrategyInt
             throw new AuthorizationException('OAuth client_credentials authorization failed.', 0, $exception);
         }
 
-        if ($response->statusCode >= 400 || !isset($data['access_token'])) {
+        $accessToken = $data['access_token'] ?? null;
+
+        if ($response->statusCode >= 400 || !is_string($accessToken) || trim($accessToken) === '') {
             throw new AuthorizationException('OAuth client_credentials authorization failed.');
         }
 
-        $this->accessToken = (string) $data['access_token'];
+        $this->accessToken = $accessToken;
         $expiresIn = isset($data['expires_in']) ? (int) $data['expires_in'] : 3600;
         $this->expiresAt = time() + max(60, $expiresIn - 60);
     }

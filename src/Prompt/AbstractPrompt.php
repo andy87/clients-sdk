@@ -11,6 +11,12 @@ use Andy87\ClientsBase\Contracts\PromptInterface;
  */
 abstract class AbstractPrompt implements PromptInterface
 {
+    /** @var string|null HTTP-метод запроса. */
+    protected const METHOD = null;
+
+    /** @var string|null Endpoint запроса. */
+    protected const ENDPOINT = null;
+
     /** @var array<string, string> Карта PHP-свойств в имена полей API. */
     protected const FIELD_MAP = [];
 
@@ -68,9 +74,15 @@ abstract class AbstractPrompt implements PromptInterface
      * Возвращает HTTP-метод запроса.
      *
      * @return string HTTP-метод.
+     *
+     * @throws \LogicException Если наследник не определил HTTP-метод.
      */
     public function getMethod(): string
     {
+        if (!is_string(static::METHOD) || trim(static::METHOD) === '') {
+            throw new \LogicException(sprintf('Prompt "%s" must define non-empty METHOD constant.', static::class));
+        }
+
         return static::METHOD;
     }
 
@@ -78,9 +90,15 @@ abstract class AbstractPrompt implements PromptInterface
      * Возвращает endpoint запроса.
      *
      * @return string Endpoint.
+     *
+     * @throws \LogicException Если наследник не определил endpoint.
      */
     public function getEndpoint(): string
     {
+        if (!is_string(static::ENDPOINT) || trim(static::ENDPOINT) === '') {
+            throw new \LogicException(sprintf('Prompt "%s" must define non-empty ENDPOINT constant.', static::class));
+        }
+
         return static::ENDPOINT;
     }
 

@@ -19,6 +19,7 @@ use Andy87\ClientsBase\Http\MultipartFile;
 use Andy87\ClientsBase\Http\HttpResponse;
 use Andy87\ClientsBase\Http\HttpRequest;
 use Andy87\ClientsBase\Http\NativeHttpTransport;
+use Andy87\ClientsBase\Prompt\AbstractPrompt;
 use Andy87\ClientsBase\Retry\DefaultRetryPolicy;
 use Andy87\ClientsBase\Tests\Support\CreateUserPrompt;
 use Andy87\ClientsBase\Tests\Support\FakeTransport;
@@ -217,6 +218,32 @@ class ProviderPipelineTest extends TestCase
     }
 
     /**
+     * Проверяет, что изменения тела в BEFORE_REQUEST попадают в rawBody перед отправкой.
+     *
+     * @return void
+     */
+    public function testBeforeRequestBodyMutationIsFinalized(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(200, [], '{"id":1}')]);
+        $provider = new TestProvider(
+            'https://api.example.test',
+            new NullAuthorizationStrategy(),
+            $transport,
+            options: new ClientOptions(events: [
+                ClientEvents::BEFORE_REQUEST => static function (object $event): void {
+                    $event->request->body = ['name' => 'Petr'];
+                },
+            ]),
+        );
+
+        $provider->call(new CreateUserPrompt(['name' => 'Ivan']), UserResponse::class);
+
+        self::assertSame(['name' => 'Petr'], $transport->requests[0]->body);
+        self::assertSame('{"name":"Petr"}', $transport->requests[0]->rawBody);
+        self::assertSame('application/json', $transport->requests[0]->headers['Content-Type']);
+    }
+
+    /**
      * Проверяет, что OAuth token request содержит закодированное form-urlencoded тело.
      *
      * @return void
@@ -249,6 +276,51 @@ class ProviderPipelineTest extends TestCase
         } catch (AuthorizationException $exception) {
             self::assertInstanceOf(ResponseDecodeException::class, $exception->getPrevious());
         }
+    }
+
+    /**
+     * Проверяет, что OAuth access_token должен быть непустой строкой.
+     *
+     * @return void
+     */
+    public function testClientCredentialsAuthorizationRejectsInvalidTokenType(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(200, [], '{"access_token":[],"expires_in":3600}')]);
+        $authorization = new ClientCredentialsAuthorizationStrategy('https://auth.example.test/token', 'client', 'secret');
+
+        $this->expectException(AuthorizationException::class);
+
+        $authorization->getAuthorizationHeaders($transport);
+    }
+
+    /**
+     * Проверяет, что response class должен реализовывать ResponseInterface.
+     *
+     * @return void
+     */
+    public function testProviderRejectsInvalidResponseClass(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(200, [], '{"id":1}')]);
+        $provider = new TestProvider('https://api.example.test', new NullAuthorizationStrategy(), $transport);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $provider->callAnyResponseClass(new GetUserPrompt(['id' => 1]), \stdClass::class);
+    }
+
+    /**
+     * Проверяет, что Prompt без обязательных constants падает понятной ошибкой.
+     *
+     * @return void
+     */
+    public function testPromptWithoutMethodConstantThrowsLogicException(): void
+    {
+        $prompt = new class extends AbstractPrompt {
+        };
+
+        $this->expectException(\LogicException::class);
+
+        $prompt->getMethod();
     }
 
     /**
@@ -355,6 +427,23 @@ class ProviderPipelineTest extends TestCase
         self::assertSame(
             'application/x-www-form-urlencoded',
             $mediaType->invoke($transport, 'Application/X-WWW-FORM-URLENCODED; charset=utf-8'),
+        );
+    }
+
+    /**
+     * Проверяет, что Native transport fallback использует единый query encoder.
+     *
+     * @return void
+     */
+    public function testNativeTransportFallbackQueryEncodingUsesRfc3986(): void
+    {
+        $transport = new NativeHttpTransport();
+        $buildUrl = new \ReflectionMethod($transport, 'buildUrl');
+        $buildUrl->setAccessible(true);
+
+        self::assertSame(
+            'https://api.example.test/search?q=a%20b',
+            $buildUrl->invoke($transport, 'https://api.example.test/search', ['q' => 'a b']),
         );
     }
 

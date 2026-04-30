@@ -62,6 +62,6 @@ class ClientOptions
         $this->responseDecoder ??= new JsonResponseDecoder();
         $this->errorFactory ??= new DefaultApiErrorFactory();
         $this->requestFactory ??= new DefaultRequestFactory($this->queryEncoder, $this->bodyEncoder);
-        $this->requestFinalizer ??= new DefaultRequestFinalizer($this->queryEncoder);
+        $this->requestFinalizer ??= new DefaultRequestFinalizer($this->queryEncoder, $this->bodyEncoder);
     }
 }

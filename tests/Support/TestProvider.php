@@ -25,4 +25,17 @@ class TestProvider extends AbstractProvider
     {
         return $this->request($prompt, $responseClass);
     }
+
+    /**
+     * Выполняет тестовый API-запрос с произвольным классом ответа для проверки runtime-контракта.
+     *
+     * @param PromptInterface $prompt DTO запроса.
+     * @param class-string $responseClass Класс DTO ответа.
+     *
+     * @return ResponseInterface DTO ответа.
+     */
+    public function callAnyResponseClass(PromptInterface $prompt, string $responseClass): ResponseInterface
+    {
+        return $this->request($prompt, $responseClass);
+    }
 }

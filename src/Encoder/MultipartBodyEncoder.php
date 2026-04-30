@@ -68,10 +68,32 @@ class MultipartBodyEncoder implements BodyEncoderInterface
 
             $boundary = trim(substr($part, 9), " \t\n\r\0\x0B\"");
 
-            return $boundary !== '' ? $boundary : null;
+            if ($boundary === '') {
+                return null;
+            }
+
+            return $this->validateBoundary($boundary);
         }
 
         return null;
+    }
+
+    /**
+     * Проверяет boundary multipart/form-data на безопасный формат.
+     *
+     * @param string $boundary Boundary multipart-запроса.
+     *
+     * @return string Проверенный boundary.
+     *
+     * @throws \InvalidArgumentException Если boundary содержит недопустимые символы.
+     */
+    private function validateBoundary(string $boundary): string
+    {
+        if (!preg_match('/^[A-Za-z0-9\'()+_,.\/:=?-]{1,70}$/', $boundary)) {
+            throw new \InvalidArgumentException('Multipart boundary contains invalid characters.');
+        }
+
+        return $boundary;
     }
 
     /**

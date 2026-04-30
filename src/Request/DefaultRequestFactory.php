@@ -58,12 +58,13 @@ class DefaultRequestFactory implements RequestFactoryInterface
         $query = array_merge($prompt->getQueryParameters(), $extraQuery);
         $queryString = $this->queryEncoder->encode($query);
         $url = rtrim($baseUrl, '/') . '/' . ltrim($endpoint, '/');
+        $body = $prompt->getBody();
 
-        $encodedBody = $this->bodyEncoder->encode($prompt->getBody(), $prompt->getContentType());
+        $encodedBody = $this->bodyEncoder->encode($body, $prompt->getContentType());
         $headers = HeaderUtils::merge($headers, $encodedBody->headers);
 
         if ($encodedBody->contentType !== null && !HeaderUtils::has($headers, 'Content-Type')) {
-            $headers['Content-Type'] = $encodedBody->contentType;
+            $headers = HeaderUtils::merge($headers, ['Content-Type' => $encodedBody->contentType]);
         }
 
         return new HttpRequest(
@@ -71,7 +72,7 @@ class DefaultRequestFactory implements RequestFactoryInterface
             url: $url,
             headers: $headers,
             query: $query,
-            body: $prompt->getBody(),
+            body: $body,
             contentType: $encodedBody->contentType ?? $prompt->getContentType(),
             timeout: $timeout,
             rawBody: $encodedBody->content,

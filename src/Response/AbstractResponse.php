@@ -86,8 +86,16 @@ abstract class AbstractResponse implements ResponseInterface
         $this->decodedBody = $decodedBody ?? $data;
         $this->request = $request;
 
-        if ($error === null && is_string(static::MODEL) && class_exists(static::MODEL)) {
-            $this->model = new (static::MODEL)($data);
+        if ($error === null && static::MODEL !== null) {
+            $modelClass = static::MODEL;
+
+            if (!is_string($modelClass) || !class_exists($modelClass)) {
+                $modelName = is_scalar($modelClass) ? (string) $modelClass : get_debug_type($modelClass);
+
+                throw new \LogicException(sprintf('Response MODEL "%s" must be an existing class.', $modelName));
+            }
+
+            $this->model = new $modelClass($data);
         }
 
         foreach (static::FIELD_MAP as $property => $apiName) {

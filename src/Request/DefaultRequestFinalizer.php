@@ -56,8 +56,12 @@ class DefaultRequestFinalizer implements RequestFinalizerInterface
             if ($encodedBody->contentType !== null) {
                 $request->headers = HeaderUtils::merge($request->headers, ['Content-Type' => $encodedBody->contentType]);
             }
-        } elseif ($request->contentType !== null && !HeaderUtils::has($request->headers, 'Content-Type')) {
-            $request->headers['Content-Type'] = $request->contentType;
+        } else {
+            $request->rawBody = null;
+
+            if ($request->contentType !== null && !HeaderUtils::has($request->headers, 'Content-Type')) {
+                $request->headers = HeaderUtils::merge($request->headers, ['Content-Type' => $request->contentType]);
+            }
         }
 
         return $request;

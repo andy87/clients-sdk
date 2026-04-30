@@ -20,6 +20,8 @@ use Andy87\ClientsBase\Http\HttpResponse;
 use Andy87\ClientsBase\Http\HttpRequest;
 use Andy87\ClientsBase\Http\NativeHttpTransport;
 use Andy87\ClientsBase\Prompt\AbstractPrompt;
+use Andy87\ClientsBase\Request\DefaultRequestFactory;
+use Andy87\ClientsBase\Response\AbstractResponse;
 use Andy87\ClientsBase\Retry\DefaultRetryPolicy;
 use Andy87\ClientsBase\Tests\Support\CreateUserPrompt;
 use Andy87\ClientsBase\Tests\Support\FakeTransport;
@@ -244,6 +246,65 @@ class ProviderPipelineTest extends TestCase
     }
 
     /**
+     * Проверяет, что удаление тела в BEFORE_REQUEST очищает ранее закодированное rawBody.
+     *
+     * @return void
+     */
+    public function testBeforeRequestBodyRemovalClearsRawBody(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(200, [], '{"id":1}')]);
+        $provider = new TestProvider(
+            'https://api.example.test',
+            new NullAuthorizationStrategy(),
+            $transport,
+            options: new ClientOptions(events: [
+                ClientEvents::BEFORE_REQUEST => static function (object $event): void {
+                    $event->request->body = null;
+                },
+            ]),
+        );
+
+        $provider->call(new CreateUserPrompt(['name' => 'Ivan']), UserResponse::class);
+
+        self::assertNull($transport->requests[0]->body);
+        self::assertNull($transport->requests[0]->rawBody);
+    }
+
+    /**
+     * Проверяет, что фабрика запроса получает тело Prompt DTO только один раз.
+     *
+     * @return void
+     */
+    public function testRequestFactoryReadsPromptBodyOnce(): void
+    {
+        $prompt = new class extends AbstractPrompt {
+            protected const METHOD = 'POST';
+            protected const ENDPOINT = '/users';
+            protected const CONTENT_TYPE = 'application/json';
+
+            public int $bodyCalls = 0;
+
+            /**
+             * Возвращает тело запроса и считает количество вызовов.
+             *
+             * @return array<string, string> Тело запроса.
+             */
+            public function getBody(): array
+            {
+                ++$this->bodyCalls;
+
+                return $this->bodyCalls === 1 ? ['name' => 'First'] : ['name' => 'Second'];
+            }
+        };
+
+        $request = (new DefaultRequestFactory())->create($prompt, 'https://api.example.test', [], 30);
+
+        self::assertSame(1, $prompt->bodyCalls);
+        self::assertSame(['name' => 'First'], $request->body);
+        self::assertSame('{"name":"First"}', $request->rawBody);
+    }
+
+    /**
      * Проверяет, что OAuth token request содержит закодированное form-urlencoded тело.
      *
      * @return void
@@ -401,6 +462,18 @@ class ProviderPipelineTest extends TestCase
     }
 
     /**
+     * Проверяет, что multipart boundary не принимает символы внедрения заголовков.
+     *
+     * @return void
+     */
+    public function testMultipartBodyRejectsInvalidBoundary(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        (new MultipartBodyEncoder())->encode(['file' => 'abc'], "multipart/form-data; boundary=bad\r\nX-Injected: 1");
+    }
+
+    /**
      * Проверяет регистронезависимый выбор encoder-а по Content-Type.
      *
      * @return void
@@ -458,5 +531,19 @@ class ProviderPipelineTest extends TestCase
 
         self::assertSame('invalid_request', $error->code);
         self::assertSame(400, $error->statusCode);
+    }
+
+    /**
+     * Проверяет, что некорректный MODEL response DTO не игнорируется молча.
+     *
+     * @return void
+     */
+    public function testResponseRejectsMissingModelClass(): void
+    {
+        $this->expectException(\LogicException::class);
+
+        new class(['id' => 1]) extends AbstractResponse {
+            protected const MODEL = 'Andy87\\ClientsBase\\Tests\\MissingResponseModel';
+        };
     }
 }
